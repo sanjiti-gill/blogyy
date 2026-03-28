@@ -522,59 +522,40 @@ function generate() {
   const kw = document.getElementById('kwInput').value.trim();
   if(!kw) return;
   
+  // 1. UI Reset
   document.getElementById('genBtn').disabled = true;
   document.getElementById('outputGrid').classList.remove('visible');
-  document.getElementById('blogContent').innerHTML = '<div style="color:var(--muted);font-size:13px;font-family:var(--mono);margin-top:20px;">Generating...</div>';
+  document.getElementById('blogContent').innerHTML = '<div style="color:var(--muted);font-size:13px;font-family:var(--mono);margin-top:20px;">AI is thinking (this may take 30s)...</div>';
 
   const status = document.getElementById('statusBar');
   status.className = 'status-bar active';
+  status.textContent = 'Starting pipeline...';
 
-  const es = new EventSource('/generate?' + new URLSearchParams({_: Date.now()}));
-
+  // 2. The Fetch Call (No localhost, no EventSource)
   fetch('/generate', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({keyword: kw})
-  }).then(res => {
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-
-    function read() {
-      reader.read().then(({done, value}) => {
-        if(done) return;
-        buf += decoder.decode(value, {stream:true});
-        const lines = buf.split('\n\n');
-        buf = lines.pop();
-        lines.forEach(line => {
-          if(line.startsWith('data: ')) {
-            const msg = JSON.parse(line.slice(6));
-            handleMsg(msg);
-          }
-        });
-        read();
-      });
-    }
-    read();
+  })
+  .then(response => {
+    if (!response.ok) throw new Error('Server Busy or Timeout');
+    return response.json();
+  })
+  .then(data => {
+    // This assumes your backend sends the full JSON once done
+    allDone();
+    status.className = 'status-bar done';
+    status.textContent = 'Done. Blog generated + SEO validated.';
+    currentData = data; // Note: Ensure your backend returns the data object
+    renderOutput(data);
+    document.getElementById('genBtn').disabled = false;
+  })
+  .catch(err => {
+    console.error(err);
+    status.className = 'status-bar';
+    status.textContent = 'Error: The AI took too long or the server reset.';
+    document.getElementById('genBtn').disabled = false;
   });
-
-  function handleMsg(msg) {
-    if(msg.type === 'progress') {
-      setStep(msg.step, 'active');
-      status.textContent = msg.msg;
-    } else if(msg.type === 'done') {
-      allDone();
-      status.className = 'status-bar done';
-      status.textContent = 'Done. Blog generated + SEO validated.';
-      currentData = msg.data;
-      renderOutput(msg.data);
-      document.getElementById('genBtn').disabled = false;
-    } else if(msg.type === 'error') {
-      status.className = 'status-bar';
-      status.textContent = 'Error: ' + msg.msg;
-      document.getElementById('genBtn').disabled = false;
-    }
-  }
 }
 
 function renderOutput(data) {
