@@ -53,3 +53,7 @@ def generate():
 if __name__ == "__main__":
     # Threaded=True is important for the streaming response
     app.run(debug=True, port=5000, threaded=True)
+
+@app.route('/health')
+def health():
+    return "OK", 200
