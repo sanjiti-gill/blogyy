@@ -6,9 +6,19 @@ from engine import run_pipeline
 
 app = Flask(__name__)
 
+def sanitize_keyword(kw):
+    if not kw:
+        return "", True
+    clean = kw.strip()
+    return clean, False
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route('/health')
+def health():
+    return "OK", 200
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -50,10 +60,12 @@ def generate():
 
     return Response(stream_with_context(stream()), mimetype="text/event-stream")
 
-if __name__ == "__main__":
-    # Threaded=True is important for the streaming response
-    app.run(debug=True, port=5000, threaded=True)
 
-@app.route('/health')
-def health():
-    return "OK", 200
+
+if __name__ == "__main__":
+    import os
+    # Render provides a PORT environment variable
+    port = int(os.environ.get("PORT", 10000))
+    # Remove debug=True for production
+    app.run(host='0.0.0.0', port=port, threaded=True)
+
