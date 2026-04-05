@@ -417,6 +417,9 @@
 <header>
   <div class="logo">Blogy <span>Engine</span></div>
   <span class="badge">v1.0 · Groq · LLaMA 3 70B</span>
+  <button class="toolbar-btn" id="historyToggle" onclick="toggleHistory()" style="margin-left:auto;font-size:12px;">
+    ⏱ History
+  </button>
 </header>
 
 <div class="main">
@@ -683,6 +686,154 @@ function renderBlog(data) {
   }
 }
 
+</script>
+<!-- HISTORY DRAWER -->
+<div id="historyOverlay" onclick="toggleHistory()" style="
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
+  z-index:200; backdrop-filter:blur(2px);
+"></div>
+
+<div id="historyDrawer" style="
+  position:fixed; top:0; right:0; height:100vh; width:360px;
+  background:var(--surface); border-left:1px solid var(--border);
+  z-index:201; transform:translateX(100%);
+  transition:transform 0.3s cubic-bezier(.4,0,.2,1);
+  display:flex; flex-direction:column;
+">
+  <div style="
+    padding:20px 24px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+  ">
+    <span style="font-family:var(--mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);">Blog History</span>
+    <button onclick="toggleHistory()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1;">×</button>
+  </div>
+
+  <div id="historyList" style="
+    flex:1; overflow-y:auto; padding:12px;
+  ">
+    <div style="color:var(--muted);font-size:13px;font-family:var(--mono);text-align:center;margin-top:40px;">
+      Loading...
+    </div>
+  </div>
+</div>
+
+<style>
+  #historyDrawer.open { transform: translateX(0); }
+
+  .history-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .history-card:hover {
+    border-color: var(--accent);
+    background: #1e2028;
+  }
+  .history-kw {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-meta {
+    display: flex;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .history-score {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .history-score.good { background:#0d2e1f; color:var(--green); }
+  .history-score.ok   { background:#2e2200; color:var(--amber); }
+  .history-score.bad  { background:#2e0d0d; color:var(--red);   }
+</style>
+
+<script>
+  let historyOpen = false;
+
+  function toggleHistory() {
+    historyOpen = !historyOpen;
+    const drawer = document.getElementById('historyDrawer');
+    const overlay = document.getElementById('historyOverlay');
+    if (historyOpen) {
+      drawer.classList.add('open');
+      overlay.style.display = 'block';
+      loadHistory();
+    } else {
+      drawer.classList.remove('open');
+      overlay.style.display = 'none';
+    }
+  }
+
+  function loadHistory() {
+    fetch('/history')
+      .then(r => r.json())
+      .then(blogs => {
+        const list = document.getElementById('historyList');
+        if (!blogs.length) {
+          list.innerHTML = '<div style="color:var(--muted);font-size:13px;font-family:var(--mono);text-align:center;margin-top:40px;">No blogs yet.</div>';
+          return;
+        }
+        list.innerHTML = blogs.map(b => {
+          const scoreClass = b.seo_score >= 70 ? 'good' : b.seo_score >= 45 ? 'ok' : 'bad';
+          const date = new Date(b.created_at).toLocaleDateString('en-IN', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+          return `
+            <div class="history-card" onclick="loadBlogFromHistory(${b.id})">
+              <div class="history-kw">${b.keyword}</div>
+              <div class="history-meta">
+                <span>${date}</span>
+                <span>${b.word_count} words</span>
+                <span class="history-score ${scoreClass}">SEO ${b.seo_score}</span>
+              </div>
+            </div>`;
+        }).join('');
+      });
+  }
+
+  function loadBlogFromHistory(id) {
+    fetch(`/history/${id}`)
+      .then(r => r.json())
+      .then(blog => {
+        currentData = {
+          keyword: blog.keyword,
+          blog_html: blog.blog_html,
+          outline: blog.outline,
+          seo: {
+            seo_score: blog.seo_score,
+            word_count: blog.word_count,
+          },
+          platform_variants: blog.platform_variants,
+          analysis: {}
+        };
+        currentPlatform = 'Master';
+        document.querySelectorAll('.platform-tabs .toolbar-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('btnMaster').classList.add('active');
+        // Re-render SEO panel with what we have
+        document.getElementById('scoreRing').textContent = blog.seo_score;
+        const scoreClass = blog.seo_score >= 70 ? 'good' : blog.seo_score >= 45 ? 'ok' : 'bad';
+        document.getElementById('scoreRing').className = 'ring ' + scoreClass;
+        document.getElementById('scoreLabel').textContent = blog.seo_score >= 70 ? 'Strong' : blog.seo_score >= 45 ? 'Needs work' : 'Weak';
+        document.getElementById('scoreSubtxt').textContent = blog.word_count + ' words';
+        document.getElementById('outputGrid').classList.add('visible');
+        renderBlog(currentData);
+        toggleHistory();
+        document.getElementById('statusBar').className = 'status-bar done';
+        document.getElementById('statusBar').textContent = `Loaded: "${blog.keyword}"`;
+      });
+  }
 </script>
 </body>
 </html>
